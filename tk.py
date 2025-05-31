@@ -1,6 +1,5 @@
-
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog, font
+from tkinter import ttk, filedialog, messagebox, scrolledtext
 import webbrowser
 import os
 import re
@@ -12,8 +11,6 @@ import threading
 from datetime import datetime
 import time
 import subprocess
-import ast
-import keyword
 
 i = 0
 
@@ -45,388 +42,68 @@ class LineNumbers(tk.Canvas):
         )
 
         # Привязка событий для синхронизации
-        self.text_widget.bind('', self.redraw)
-        self.text_widget.bind('', self.redraw)
-        self.text_widget.bind('', self.redraw)
-        self.text_widget.bind('', self.redraw)
-        self.text_widget.bind('', self.redraw)
+        self.text_widget.bind('<KeyRelease>', self.redraw)
+        self.text_widget.bind('<Button-1>', self.redraw)
+        self.text_widget.bind('<MouseWheel>', self.redraw)
+        self.text_widget.bind('<Configure>', self.redraw)
+
+        self.cmd_running = False
+
+        # Привязка прокрутки
+        self.text_widget.bind('<B1-Motion>', self.redraw)
 
     def redraw(self, event=None):
         """Перерисовка номеров строк"""
         self.delete("all")
 
-        try:
-            first_line = self.text_widget.index("@0,0")
-            line_num = int(first_line.split('.')[0])
+        # Получаем первую видимую строку
+        first_line = self.text_widget.index("@0,0")
 
-            y_pos = 0
-            while True:
-                try:
-                    dline_info = self.text_widget.dlineinfo(f"{line_num}.0")
-                    if dline_info is None:
-                        break
+        # Получаем информацию о видимых строках
+        line_num = int(first_line.split('.')[0])
 
-                    line_y = dline_info[1]
-
-                    self.create_text(
-                        45, line_y + 10,
-                        anchor="e",
-                        text=str(line_num),
-                        fill="#858585",
-                        font=("Consolas", 10)
-                    )
-
-                    line_num += 1
-
-                    if line_y > self.text_widget.winfo_height():
-                        break
-
-                except tk.TclError:
+        # Рисуем номера для всех видимых строк
+        y_pos = 0
+        while True:
+            try:
+                # Получаем информацию о строке
+                dline_info = self.text_widget.dlineinfo(f"{line_num}.0")
+                if dline_info is None:
                     break
-        except:
-            pass
 
+                # Позиция строки относительно виджета
+                line_y = dline_info[1]
+
+                # Рисуем номер строки
+                self.create_text(
+                    45, line_y + 10,  # Выравнивание по правому краю
+                    anchor="e",
+                    text=str(line_num),
+                    fill="#858585",
+                    font=("Consolas", 10)
+                )
+
+                line_num += 1
+
+                # Проверяем, не вышли ли за пределы видимой области
+                if line_y > self.text_widget.winfo_height():
+                    break
+
+            except tk.TclError:
+                break
+
+        # Планируем следующую перерисовку через небольшую задержку
         self.after_idle(self.sync_scroll)
 
     def sync_scroll(self):
         """Синхронизация прокрутки с текстовым виджетом"""
+        # Получаем текущую позицию прокрутки
         try:
             top, bottom = self.text_widget.yview()
+            # Обновляем область прокрутки canvas
             self.configure(scrollregion=self.bbox("all"))
         except:
             pass
-
-
-class AutoCompleteEntry(tk.Text):
-    """Виджет с автодополнением для Python"""
-
-    def __init__(self, parent, **kwargs):
-        super().__init__(parent, **kwargs)
-
-        # Список ключевых слов Python
-        self.keywords = keyword.kwlist + [
-            'print', 'input', 'len', 'range', 'str', 'int', 'float', 'list', 'dict', 'tuple',
-            'set', 'bool', 'type', 'isinstance', 'hasattr', 'getattr', 'setattr', 'delattr',
-            'open', 'close', 'read', 'write', 'readline', 'readlines', 'split', 'join',
-            'append', 'extend', 'insert', 'remove', 'pop', 'index', 'count', 'sort', 'reverse',
-            'keys', 'values', 'items', 'get', 'update', 'clear', 'copy'
-        ]
-
-        self.popup = None
-        self.bind('', self.on_key_release)
-        self.bind('', self.hide_popup)
-
-    def on_key_release(self, event):
-        """Обработка нажатий клавиш для автодополнения"""
-        if event.keysym in ['Up', 'Down', 'Left', 'Right', 'Return', 'Tab']:
-            self.hide_popup()
-            return
-
-        # Получаем текущее слово
-        current_pos = self.index(tk.INSERT)
-        line_start = current_pos.split('.')[0] + '.0'
-        line_text = self.get(line_start, current_pos)
-
-        # Ищем последнее слово
-        words = re.findall(r'\w+', line_text)
-        if words:
-            current_word = words[-1]
-            if len(current_word) >= 2:  # Показываем автодополнение после 2 символов
-                matches = [kw for kw in self.keywords if kw.startswith(current_word) and kw != current_word]
-                if matches:
-                    self.show_popup(matches[:10])  # Показываем максимум 10 вариантов
-                else:
-                    self.hide_popup()
-            else:
-                self.hide_popup()
-        else:
-            self.hide_popup()
-
-    def show_popup(self, matches):
-        """Показать всплывающее окно с вариантами"""
-        if self.popup:
-            self.popup.destroy()
-
-        self.popup = tk.Toplevel(self)
-        self.popup.wm_overrideredirect(True)
-        self.popup.configure(bg="#2d2d2d")
-
-        # Позиционирование
-        x = self.winfo_rootx() + 50
-        y = self.winfo_rooty() + 50
-        self.popup.geometry(f"+{x}+{y}")
-
-        # Создаем список вариантов
-        listbox = tk.Listbox(self.popup, bg="#2d2d2d", fg="#d4d4d4",
-                             selectbackground="#007acc", height=min(len(matches), 10))
-        listbox.pack()
-
-        for match in matches:
-            listbox.insert(tk.END, match)
-
-        listbox.bind('', lambda e: self.insert_completion(listbox.get(listbox.curselection())))
-        listbox.bind('', lambda e: self.insert_completion(listbox.get(listbox.curselection())))
-
-    def insert_completion(self, completion):
-        """Вставить выбранное дополнение"""
-        current_pos = self.index(tk.INSERT)
-        line_start = current_pos.split('.')[0] + '.0'
-        line_text = self.get(line_start, current_pos)
-
-        words = re.findall(r'\w+', line_text)
-        if words:
-            current_word = words[-1]
-            # Удаляем текущее неполное слово
-            word_start = current_pos.split('.')[0] + '.' + str(int(current_pos.split('.')[1]) - len(current_word))
-            self.delete(word_start, current_pos)
-            # Вставляем полное слово
-            self.insert(word_start, completion)
-
-        self.hide_popup()
-
-    def hide_popup(self, event=None):
-        """Скрыть всплывающее окно"""
-        if self.popup:
-            self.popup.destroy()
-            self.popup = None
-
-
-class CodeAnalyzer:
-    """Анализатор кода для поиска ошибок и предупреждений"""
-
-    def __init__(self):
-        self.errors = []
-        self.warnings = []
-
-    def analyze(self, code):
-        """Анализ кода Python"""
-        self.errors = []
-        self.warnings = []
-
-        try:
-            # Проверка синтаксиса
-            ast.parse(code)
-        except SyntaxError as e:
-            self.errors.append({
-                'line': e.lineno,
-                'message': f"Синтаксическая ошибка: {e.msg}",
-                'type': 'error'
-            })
-
-        # Простые проверки качества кода
-        lines = code.split('\n')
-        for i, line in enumerate(lines, 1):
-            # Проверка длины строки
-            if len(line) > 120:
-                self.warnings.append({
-                    'line': i,
-                    'message': "Строка слишком длинная (>120 символов)",
-                    'type': 'warning'
-                })
-
-            # Проверка неиспользуемых импортов (упрощенная)
-            if line.strip().startswith('import ') and 'import' in line:
-                module_name = line.strip().split()[1].split('.')[0]
-                if module_name not in code.replace(line, ''):
-                    self.warnings.append({
-                        'line': i,
-                        'message': f"Неиспользуемый импорт: {module_name}",
-                        'type': 'warning'
-                    })
-
-        return self.errors + self.warnings
-
-
-class ProjectExplorer:
-    """Проводник проекта"""
-
-    def __init__(self, parent, app):
-        self.parent = parent
-        self.app = app
-        self.current_path = os.getcwd()
-
-        self.frame = tk.Frame(parent, bg="#252526")
-        self.frame.pack(fill=tk.BOTH, expand=True)
-
-        # Заголовок
-        header = tk.Label(self.frame, text="Проводник проекта",
-                          bg="#252526", fg="#d4d4d4", font=("Segoe UI", 10, "bold"))
-        header.pack(pady=5)
-
-        # Дерево файлов
-        self.tree = ttk.Treeview(self.frame)
-        self.tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
-        # Привязка событий
-        self.tree.bind('', self.on_double_click)
-        self.tree.bind('', self.show_context_menu)
-
-        # Загрузка текущей директории
-        self.load_directory(self.current_path)
-
-    def load_directory(self, path):
-        """Загрузка директории в дерево"""
-        self.tree.delete(*self.tree.get_children())
-
-        try:
-            for item in sorted(os.listdir(path)):
-                item_path = os.path.join(path, item)
-                if os.path.isdir(item_path):
-                    self.tree.insert('', 'end', text=f"📁 {item}", values=[item_path])
-                else:
-                    icon = "🐍" if item.endswith('.py') else "📄"
-                    self.tree.insert('', 'end', text=f"{icon} {item}", values=[item_path])
-        except PermissionError:
-            pass
-
-    def on_double_click(self, event):
-        """Обработка двойного клика"""
-        selection = self.tree.selection()
-        if selection:
-            item = self.tree.item(selection[0])
-            file_path = item['values'][0]
-
-            if os.path.isfile(file_path):
-                self.app.open_file_from_explorer(file_path)
-            else:
-                self.load_directory(file_path)
-                self.current_path = file_path
-
-    def show_context_menu(self, event):
-        """Показать контекстное меню"""
-        context_menu = tk.Menu(self.parent, tearoff=0)
-        context_menu.add_command(label="Новый файл", command=self.new_file)
-        context_menu.add_command(label="Новая папка", command=self.new_folder)
-        context_menu.add_separator()
-        context_menu.add_command(label="Обновить", command=lambda: self.load_directory(self.current_path))
-
-        try:
-            context_menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            context_menu.grab_release()
-
-    def new_file(self):
-        """Создать новый файл"""
-        name = simpledialog.askstring("Новый файл", "Имя файла:")
-        if name:
-            file_path = os.path.join(self.current_path, name)
-            try:
-                with open(file_path, 'w') as f:
-                    f.write("")
-                self.load_directory(self.current_path)
-            except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось создать файл: {e}")
-
-    def new_folder(self):
-        """Создать новую папку"""
-        name = simpledialog.askstring("Новая папка", "Имя папки:")
-        if name:
-            folder_path = os.path.join(self.current_path, name)
-            try:
-                os.makedirs(folder_path)
-                self.load_directory(self.current_path)
-            except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось создать папку: {e}")
-
-
-class FindReplaceDialog:
-    """Диалог поиска и замены"""
-
-    def __init__(self, parent, text_widget):
-        self.parent = parent
-        self.text_widget = text_widget
-        self.window = None
-
-    def show(self):
-        """Показать диалог"""
-        if self.window:
-            self.window.focus()
-            return
-
-        self.window = tk.Toplevel(self.parent)
-        self.window.title("Поиск и замена")
-        self.window.geometry("400x200")
-        self.window.configure(bg="#2d2d2d")
-
-        # Поле поиска
-        tk.Label(self.window, text="Найти:", bg="#2d2d2d", fg="#d4d4d4").grid(row=0, column=0, sticky="w", padx=5,
-                                                                              pady=5)
-        self.find_entry = tk.Entry(self.window, width=30, bg="#1e1e1e", fg="#d4d4d4")
-        self.find_entry.grid(row=0, column=1, padx=5, pady=5)
-
-        # Поле замены
-        tk.Label(self.window, text="Заменить:", bg="#2d2d2d", fg="#d4d4d4").grid(row=1, column=0, sticky="w", padx=5,
-                                                                                 pady=5)
-        self.replace_entry = tk.Entry(self.window, width=30, bg="#1e1e1e", fg="#d4d4d4")
-        self.replace_entry.grid(row=1, column=1, padx=5, pady=5)
-
-        # Кнопки
-        button_frame = tk.Frame(self.window, bg="#2d2d2d")
-        button_frame.grid(row=2, column=0, columnspan=2, pady=10)
-
-        tk.Button(button_frame, text="Найти", command=self.find_next,
-                  bg="#007acc", fg="white").pack(side=tk.LEFT, padx=5)
-        tk.Button(button_frame, text="Заменить", command=self.replace_current,
-                  bg="#007acc", fg="white").pack(side=tk.LEFT, padx=5)
-        tk.Button(button_frame, text="Заменить все", command=self.replace_all,
-                  bg="#007acc", fg="white").pack(side=tk.LEFT, padx=5)
-
-        # Привязка клавиш
-        self.find_entry.bind('', lambda e: self.find_next())
-        self.window.protocol("WM_DELETE_WINDOW", self.close)
-
-        self.find_entry.focus()
-
-    def find_next(self):
-        """Найти следующее вхождение"""
-        search_text = self.find_entry.get()
-        if not search_text:
-            return
-
-        # Очищаем предыдущие выделения
-        self.text_widget.tag_remove("search", "1.0", tk.END)
-
-        # Ищем текст
-        start_pos = self.text_widget.search(search_text, tk.INSERT, tk.END)
-        if start_pos:
-            end_pos = f"{start_pos}+{len(search_text)}c"
-            self.text_widget.tag_add("search", start_pos, end_pos)
-            self.text_widget.tag_config("search", background="#ffff00", foreground="#000000")
-            self.text_widget.mark_set(tk.INSERT, end_pos)
-            self.text_widget.see(start_pos)
-        else:
-            messagebox.showinfo("Поиск", "Текст не найден")
-
-    def replace_current(self):
-        """Заменить текущее выделение"""
-        if self.text_widget.tag_ranges("search"):
-            replace_text = self.replace_entry.get()
-            self.text_widget.delete("search.first", "search.last")
-            self.text_widget.insert("search.first", replace_text)
-            self.text_widget.tag_remove("search", "1.0", tk.END)
-
-    def replace_all(self):
-        """Заменить все вхождения"""
-        search_text = self.find_entry.get()
-        replace_text = self.replace_entry.get()
-
-        if not search_text:
-            return
-
-        content = self.text_widget.get("1.0", tk.END)
-        new_content = content.replace(search_text, replace_text)
-
-        self.text_widget.delete("1.0", tk.END)
-        self.text_widget.insert("1.0", new_content)
-
-        count = content.count(search_text)
-        messagebox.showinfo("Замена", f"Заменено {count} вхождений")
-
-    def close(self):
-        """Закрыть диалог"""
-        self.text_widget.tag_remove("search", "1.0", tk.END)
-        self.window.destroy()
-        self.window = None
 
 
 class ChatMessage:
@@ -520,15 +197,19 @@ class FileTab:
         self.content = content
         self.path = path
         self.saved = True
-        self.bookmarks = []  # Закладки в файле
 
 
 class CodeApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("T-Code Professional - Advanced IDE")
-        self.geometry("1600x900")
+        self.title("T-Code Professional")
+        self.geometry("1400x800")
         self.configure(bg="#121212")
+
+        # Инициализация атрибутов
+        self.cmd_running = False  # Флаг выполнения команды
+        self.chat_messages = []
+        self.ai_request_manager = AIRequestManager(self._handle_ai_response)
 
         # Темная цветовая схема
         self.colors = {
@@ -556,40 +237,12 @@ class CodeApp(tk.Tk):
         }
 
         # Инициализация компонентов
-        self.chat_messages = []
-        self.ai_request_manager = AIRequestManager(self._handle_ai_response)
-        self.code_analyzer = CodeAnalyzer()
-        self.find_replace_dialog = None
-        self.current_theme = "dark"
-        self.font_size = 11
-
         self.create_menu()
         self.create_widgets()
         self.init_enhanced_ai_agent()
 
-        # Автосохранение каждые 5 минут
-        self.auto_save_timer()
-
-    def auto_save_timer(self):
-        """Таймер автосохранения"""
-        self.auto_save()
-        self.after(300000, self.auto_save_timer)  # 5 минут
-
-    def auto_save(self):
-        """Автосохранение всех открытых файлов"""
-        for i, tab in enumerate(self.file_tabs):
-            if tab.path and not tab.saved:
-                try:
-                    _, editor, _ = self.get_editor_by_index(i)
-                    content = editor.get("1.0", tk.END)
-                    backup_path = tab.path + ".autosave"
-                    with open(backup_path, 'w', encoding='utf-8') as f:
-                        f.write(content)
-                except Exception:
-                    pass
-
     def create_menu(self):
-        """Создание расширенного меню"""
+        """Создание классического верхнего меню"""
         menubar = tk.Menu(self, bg=self.colors["bg"], fg="#d4d4d4",
                           activebackground=self.colors["btn_hover"],
                           activeforeground="#ffffff")
@@ -602,14 +255,9 @@ class CodeApp(tk.Tk):
         menubar.add_cascade(label="Файл", menu=file_menu)
         file_menu.add_command(label="Новый файл", command=self.new_file, accelerator="Ctrl+N")
         file_menu.add_command(label="Открыть", command=self.load_file, accelerator="Ctrl+O")
-        file_menu.add_command(label="Открыть папку", command=self.open_folder, accelerator="Ctrl+Shift+O")
-        file_menu.add_separator()
         file_menu.add_command(label="Сохранить", command=self.save_file, accelerator="Ctrl+S")
-        file_menu.add_command(label="Сохранить как", command=self.save_file_as, accelerator="Ctrl+Shift+S")
-        file_menu.add_command(label="Сохранить все", command=self.save_all_files, accelerator="Ctrl+Alt+S")
         file_menu.add_separator()
-        file_menu.add_command(label="Закрыть файл", command=self.close_current_file, accelerator="Ctrl+W")
-        file_menu.add_command(label="Выход", command=self.quit, accelerator="Ctrl+Q")
+        file_menu.add_command(label="Выход", command=self.quit)
 
         # Меню "Правка"
         edit_menu = tk.Menu(menubar, tearoff=0, bg=self.colors["bg"], fg="#d4d4d4",
@@ -617,54 +265,13 @@ class CodeApp(tk.Tk):
                             activeforeground="#ffffff")
         menubar.add_cascade(label="Правка", menu=edit_menu)
         edit_menu.add_command(label="Отменить", command=self.undo, accelerator="Ctrl+Z")
-        edit_menu.add_command(label="Повторить", command=self.redo, accelerator="Ctrl+Y")
-        edit_menu.add_separator()
-        edit_menu.add_command(label="Вырезать", command=self.cut, accelerator="Ctrl+X")
-        edit_menu.add_command(label="Копировать", command=self.copy, accelerator="Ctrl+C")
-        edit_menu.add_command(label="Вставить", command=self.paste, accelerator="Ctrl+V")
-        edit_menu.add_separator()
-        edit_menu.add_command(label="Найти", command=self.show_find_replace, accelerator="Ctrl+F")
-        edit_menu.add_command(label="Найти и заменить", command=self.show_find_replace, accelerator="Ctrl+H")
-        edit_menu.add_command(label="Перейти к строке", command=self.goto_line, accelerator="Ctrl+G")
-        edit_menu.add_separator()
-        edit_menu.add_command(label="Выделить все", command=self.select_all, accelerator="Ctrl+A")
-        edit_menu.add_command(label="Дублировать строку", command=self.duplicate_line, accelerator="Ctrl+D")
-        edit_menu.add_command(label="Удалить строку", command=self.delete_line, accelerator="Ctrl+Shift+K")
-
-        # Меню "Вид"
-        view_menu = tk.Menu(menubar, tearoff=0, bg=self.colors["bg"], fg="#d4d4d4",
-                            activebackground=self.colors["btn_hover"],
-                            activeforeground="#ffffff")
-        menubar.add_cascade(label="Вид", menu=view_menu)
-        view_menu.add_command(label="Увеличить шрифт", command=self.increase_font, accelerator="Ctrl+=")
-        view_menu.add_command(label="Уменьшить шрифт", command=self.decrease_font, accelerator="Ctrl+-")
-        view_menu.add_command(label="Сбросить размер шрифта", command=self.reset_font, accelerator="Ctrl+0")
-        view_menu.add_separator()
-        view_menu.add_command(label="Переключить тему", command=self.toggle_theme, accelerator="Ctrl+T")
-        view_menu.add_command(label="Полноэкранный режим", command=self.toggle_fullscreen, accelerator="F11")
-        view_menu.add_separator()
-        view_menu.add_command(label="Показать/скрыть проводник", command=self.toggle_explorer, accelerator="Ctrl+B")
 
         # Меню "Выполнение"
         run_menu = tk.Menu(menubar, tearoff=0, bg=self.colors["bg"], fg="#d4d4d4",
                            activebackground=self.colors["btn_hover"],
                            activeforeground="#ffffff")
         menubar.add_cascade(label="Выполнение", menu=run_menu)
-        run_menu.add_command(label="Запустить", command=self.run_code, accelerator="F5")
-        run_menu.add_command(label="Запустить в терминале", command=self.run_in_terminal, accelerator="Ctrl+F5")
-        run_menu.add_command(label="Остановить", command=self.stop_execution, accelerator="Ctrl+F2")
-        run_menu.add_separator()
-        run_menu.add_command(label="Проверить синтаксис", command=self.check_syntax, accelerator="F7")
-
-        # Меню "Инструменты"
-        tools_menu = tk.Menu(menubar, tearoff=0, bg=self.colors["bg"], fg="#d4d4d4",
-                             activebackground=self.colors["btn_hover"],
-                             activeforeground="#ffffff")
-        menubar.add_cascade(label="Инструменты", menu=tools_menu)
-        tools_menu.add_command(label="Форматировать код", command=self.format_code, accelerator="Ctrl+Alt+L")
-        tools_menu.add_command(label="Анализ кода", command=self.analyze_code, accelerator="Ctrl+Alt+I")
-        tools_menu.add_command(label="Добавить закладку", command=self.add_bookmark, accelerator="Ctrl+F11")
-        tools_menu.add_command(label="Показать закладки", command=self.show_bookmarks, accelerator="Shift+F11")
+        run_menu.add_command(label="Запустить код", command=self.run_code, accelerator="F5")
 
         # Меню "ИИ"
         ai_menu = tk.Menu(menubar, tearoff=0, bg=self.colors["bg"], fg="#d4d4d4",
@@ -672,18 +279,23 @@ class CodeApp(tk.Tk):
                           activeforeground="#ffffff")
         menubar.add_cascade(label="ИИ", menu=ai_menu)
         ai_menu.add_command(label="Анализ кода", command=self.quick_ai_analysis)
-        ai_menu.add_command(label="Объяснить код", command=self.explain_code)
-        ai_menu.add_command(label="Предложить улучшения", command=self.suggest_improvements)
-        ai_menu.add_command(label="Генерировать документацию", command=self.generate_docs)
         ai_menu.add_command(label="Очистить чат", command=self.clear_chat)
+
+        # Меню "Вид"
+        view_menu = tk.Menu(menubar, tearoff=0, bg=self.colors["bg"], fg="#d4d4d4",
+                            activebackground=self.colors["btn_hover"],
+                            activeforeground="#ffffff")
+        menubar.add_cascade(label="Вид", menu=view_menu)
+        view_menu.add_command(label="Очистить отладчик", command=self.clear_debugger)
+        view_menu.add_command(label="Очистить терминал", command=self.clear_cmd)
 
         # Меню "Справка"
         help_menu = tk.Menu(menubar, tearoff=0, bg=self.colors["bg"], fg="#d4d4d4",
                             activebackground=self.colors["btn_hover"],
                             activeforeground="#ffffff")
         menubar.add_cascade(label="Справка", menu=help_menu)
-        help_menu.add_command(label="Горячие клавиши", command=self.show_shortcuts, accelerator="F1")
-        help_menu.add_command(label="О программе", command=self.show_about)
+        help_menu.add_command(label="Справка", command=self.open_help, accelerator="F1")
+        help_menu.add_command(label="Настройки", command=self.setings)
 
     def is_code_related(self, question):
         """Проверка связи с кодом"""
@@ -721,21 +333,14 @@ class CodeApp(tk.Tk):
                               ("active", self.colors["btn_hover"])],
                   foreground=[("selected", "#ffffff")])
 
-        # Главная панель с тремя секциями
+        # Главная панель
         main_pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
-        main_pane.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+        main_pane.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
-        # Левая панель - проводник проекта
-        self.left_frame = tk.Frame(main_pane, bg=self.colors["bg"], width=250)
-        main_pane.add(self.left_frame, weight=0)
-
-        # Проводник проекта
-        self.project_explorer = ProjectExplorer(self.left_frame, self)
-
-        # Центральная панель - редактор
+        # Центральная панель редактора
         self.create_editor_panel(main_pane)
 
-        # Правая панель - инструменты
+        # Правая панель с инструментами
         self.create_right_panel(main_pane)
 
         # Инициализация
@@ -751,75 +356,55 @@ class CodeApp(tk.Tk):
         editor_frame = tk.Frame(parent, bg=self.colors["bg"])
         parent.add(editor_frame, weight=5)
 
-        # Панель инструментов редактора
-        toolbar = tk.Frame(editor_frame, bg=self.colors["bg"], height=35)
-        toolbar.pack(fill=tk.X, pady=(0, 2))
-        toolbar.pack_propagate(False)
+        # Заголовок редактора
+        header_frame = tk.Frame(editor_frame, bg=self.colors["bg"], height=35)
+        header_frame.pack(fill=tk.X, pady=(0, 8))
+        header_frame.pack_propagate(False)
 
-        # Кнопки быстрого доступа
-        tk.Button(toolbar, text="▶", command=self.run_code,
-                  bg=self.colors["btn_normal"], fg="#d4d4d4", relief="flat").pack(side=tk.LEFT, padx=2)
-        tk.Button(toolbar, text="⏹", command=self.stop_execution,
-                  bg=self.colors["btn_normal"], fg="#d4d4d4", relief="flat").pack(side=tk.LEFT, padx=2)
-        tk.Button(toolbar, text="🔍", command=self.show_find_replace,
-                  bg=self.colors["btn_normal"], fg="#d4d4d4", relief="flat").pack(side=tk.LEFT, padx=2)
-        tk.Button(toolbar, text="📋", command=self.format_code,
-                  bg=self.colors["btn_normal"], fg="#d4d4d4", relief="flat").pack(side=tk.LEFT, padx=2)
-
-        # Информация о файле
-        self.file_info_label = tk.Label(toolbar, text="", bg=self.colors["bg"], fg="#858585")
-        self.file_info_label.pack(side=tk.RIGHT, padx=10)
+        editor_title = tk.Label(header_frame, text="Редактор кода",
+                                bg=self.colors["bg"], fg="#d4d4d4",
+                                font=("Segoe UI", 11, "bold"))
+        editor_title.pack(side=tk.LEFT, pady=8)
 
         # Notebook для файлов
         self.file_notebook = ttk.Notebook(editor_frame, style="Custom.TNotebook")
         self.file_notebook.pack(fill=tk.BOTH, expand=True)
-        self.file_notebook.bind(">", self.switch_file_tab)
-        self.file_notebook.bind("", self.show_tab_context_menu)
+        self.file_notebook.bind("<<NotebookTabChanged>>", self.switch_file_tab)
 
     def create_right_panel(self, parent):
         """Создание правой панели с инструментами"""
         right_frame = tk.Frame(parent, bg=self.colors["bg"])
-        parent.add(right_frame, weight=2)
+        parent.add(right_frame, weight=3)
+
+        # Заголовок правой панели
+        header_frame = tk.Frame(right_frame, bg=self.colors["bg"], height=35)
+        header_frame.pack(fill=tk.X, pady=(0, 8))
+        header_frame.pack_propagate(False)
+
+        panel_title = tk.Label(header_frame, text="Панель инструментов",
+                               bg=self.colors["bg"], fg="#d4d4d4",
+                               font=("Segoe UI", 11, "bold"))
+        panel_title.pack(side=tk.LEFT, pady=8)
 
         # Notebook для инструментов
         self.tools_notebook = ttk.Notebook(right_frame, style="Custom.TNotebook")
         self.tools_notebook.pack(fill=tk.BOTH, expand=True)
 
         # Создание вкладок
-        self.create_problems_tab()
+        self.create_view_tab()
         self.create_debugger_tab()
         self.create_cmd_tab()
-        self.create_git_tab()
 
-    def create_problems_tab(self):
-        """Создание вкладки проблем (ошибки и предупреждения)"""
-        problems_frame = tk.Frame(self.tools_notebook, bg=self.colors["debugger_bg"])
-        self.tools_notebook.add(problems_frame, text="Проблемы")
+    def create_view_tab(self):
+        """Создание вкладки просмотра"""
+        view_frame = tk.Frame(self.tools_notebook, bg=self.colors["editor_bg"])
+        self.tools_notebook.add(view_frame, text="Просмотр")
 
-        # Заголовок
-        header = tk.Frame(problems_frame, bg=self.colors["debugger_bg"], height=35)
-        header.pack(fill=tk.X, pady=(5, 0))
-        header.pack_propagate(False)
-
-        title = tk.Label(header, text="Проблемы кода",
-                         bg=self.colors["debugger_bg"], fg="#d4d4d4",
-                         font=("Segoe UI", 10, "bold"))
-        title.pack(side=tk.LEFT, padx=10, pady=8)
-
-        # Список проблем
-        self.problems_tree = ttk.Treeview(problems_frame, columns=("file", "line", "message"), show="tree headings")
-        self.problems_tree.heading("#0", text="Тип")
-        self.problems_tree.heading("file", text="Файл")
-        self.problems_tree.heading("line", text="Строка")
-        self.problems_tree.heading("message", text="Сообщение")
-
-        self.problems_tree.column("#0", width=50)
-        self.problems_tree.column("file", width=100)
-        self.problems_tree.column("line", width=50)
-        self.problems_tree.column("message", width=300)
-
-        self.problems_tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        self.problems_tree.bind('', self.goto_problem)
+        # Содержимое вкладки просмотра
+        view_label = tk.Label(view_frame, text="Область предварительного просмотра",
+                              bg=self.colors["editor_bg"], fg="#d4d4d4",
+                              font=("Segoe UI", 10))
+        view_label.pack(expand=True)
 
     def create_debugger_tab(self):
         """Создание вкладки отладчика"""
@@ -862,10 +447,10 @@ class CodeApp(tk.Tk):
         output = self.output
 
         # Приветственные сообщения
-        self._debugger_insert("=" * 60 + "\n")
-        self._debugger_insert("T-Code Professional IDE v2.0\n")
+        self._debugger_insert("=" * 50 + "\n")
+        self._debugger_insert("T-Code Professional v1.0\n")
         self._debugger_insert("Система отладки инициализирована\n")
-        self._debugger_insert("=" * 60 + "\n\n")
+        self._debugger_insert("=" * 50 + "\n\n")
 
     def create_cmd_tab(self):
         """Создание вкладки командной строки"""
@@ -877,19 +462,18 @@ class CodeApp(tk.Tk):
         cmd_header.pack(fill=tk.X, pady=(8, 0))
         cmd_header.pack_propagate(False)
 
-        cmd_title = tk.Label(cmd_header, text="Интегрированный терминал",
+        cmd_title = tk.Label(cmd_header, text="Командная строка",
                              bg=self.colors["cmd_bg"], fg=self.colors["cmd_fg"],
                              font=("Segoe UI", 10, "bold"))
         cmd_title.pack(side=tk.LEFT, padx=12, pady=10)
 
-        # Кнопки терминала
-        tk.Button(cmd_header, text="Очистить", command=self.clear_cmd,
-                  bg=self.colors["btn_danger"], fg="#ffffff", font=("Segoe UI", 8),
-                  relief="flat", borderwidth=0).pack(side=tk.RIGHT, padx=(0, 12), pady=8)
-
-        tk.Button(cmd_header, text="Новый терминал", command=self.new_terminal,
-                  bg=self.colors["btn_normal"], fg="#d4d4d4", font=("Segoe UI", 8),
-                  relief="flat", borderwidth=0).pack(side=tk.RIGHT, padx=5, pady=8)
+        # Кнопка очистки терминала
+        clear_cmd_btn = tk.Button(cmd_header, text="Очистить",
+                                  bg=self.colors["btn_danger"], fg="#ffffff",
+                                  font=("Segoe UI", 8),
+                                  relief="flat", borderwidth=0,
+                                  command=self.clear_cmd)
+        clear_cmd_btn.pack(side=tk.RIGHT, padx=12, pady=8)
 
         # Область вывода команд
         self.cmd_output = scrolledtext.ScrolledText(
@@ -910,6 +494,20 @@ class CodeApp(tk.Tk):
         cmd_input_frame.pack(fill=tk.X, padx=8, pady=8)
         cmd_input_frame.pack_propagate(False)
 
+        # Кнопка прерывания команды
+        self.kill_button = tk.Button(
+            cmd_input_frame,
+            text="Прервать",
+            bg=self.colors["btn_danger"],
+            fg="#ffffff",
+            font=("Segoe UI", 8),
+            relief="flat",
+            borderwidth=0,
+            command=self.kill_command,
+            state="disabled"
+        )
+        self.kill_button.pack(side=tk.RIGHT, padx=(0, 8), pady=10)
+
         # Промпт
         cmd_prompt = tk.Label(cmd_input_frame, text="T-Code>",
                               bg=self.colors["cmd_bg"], fg=self.colors["cmd_fg"],
@@ -925,56 +523,37 @@ class CodeApp(tk.Tk):
                                   highlightthickness=1,
                                   highlightcolor=self.colors["tab_active"])
         self.cmd_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, pady=10, padx=(0, 8))
-        self.cmd_entry.bind("", self.process_cmd)
-        self.cmd_entry.bind("", self.cmd_history_up)
-        self.cmd_entry.bind("", self.cmd_history_down)
-
-        # История команд
-        self.cmd_history = []
-        self.cmd_history_index = -1
+        self.cmd_entry.bind("<Return>", self.process_cmd)
 
         # Приветствие в терминале
-        self._cmd_insert("T-Code Professional Terminal v2.0\n")
+        self._cmd_insert("T-Code Terminal v1.0\n")
         self._cmd_insert("Введите команду и нажмите Enter\n")
-        self._cmd_insert("Поддерживаются Python команды и системные команды\n\n")
+        self._cmd_insert("Используйте 'cmd' перед системными командами (например: cmd pip install numpy)\n")
+        self._cmd_insert("Для прерывания длительной команды нажмите кнопку 'Прервать'\n\n")
 
-    def create_git_tab(self):
-        """Создание вкладки Git"""
-        git_frame = tk.Frame(self.tools_notebook, bg=self.colors["debugger_bg"])
-        self.tools_notebook.add(git_frame, text="Git")
 
-        # Заголовок
-        header = tk.Frame(git_frame, bg=self.colors["debugger_bg"], height=35)
-        header.pack(fill=tk.X, pady=(5, 0))
-        header.pack_propagate(False)
 
-        title = tk.Label(header, text="Система контроля версий",
-                         bg=self.colors["debugger_bg"], fg="#d4d4d4",
-                         font=("Segoe UI", 10, "bold"))
-        title.pack(side=tk.LEFT, padx=10, pady=8)
+    def update_kill_button(self):
+        """Обновляет состояние кнопки прерывания"""
+        if self.cmd_running:
+            self.kill_button.config(state="normal")
+        else:
+            self.kill_button.config(state="disabled")
 
-        # Кнопки Git
-        button_frame = tk.Frame(git_frame, bg=self.colors["debugger_bg"])
-        button_frame.pack(fill=tk.X, padx=10, pady=5)
+    def kill_command(self):
+        """Прерывает выполнение текущей команды"""
+        try:
+            # Вызываем команду прерывания
+            result = cmd.compile("cmd_kill")
+            self._cmd_insert(f"{result}\n\n")
+        except Exception as e:
+            self._cmd_insert(f"Ошибка прерывания: {str(e)}\n\n")
+        finally:
+            self.cmd_running = False
+            self.update_kill_button()
 
-        tk.Button(button_frame, text="Git Status", command=self.git_status,
-                  bg=self.colors["btn_normal"], fg="#d4d4d4", relief="flat").pack(side=tk.LEFT, padx=2)
-        tk.Button(button_frame, text="Git Add", command=self.git_add,
-                  bg=self.colors["btn_normal"], fg="#d4d4d4", relief="flat").pack(side=tk.LEFT, padx=2)
-        tk.Button(button_frame, text="Git Commit", command=self.git_commit,
-                  bg=self.colors["btn_normal"], fg="#d4d4d4", relief="flat").pack(side=tk.LEFT, padx=2)
 
-        # Область вывода Git
-        self.git_output = scrolledtext.ScrolledText(
-            git_frame,
-            bg=self.colors["debugger_bg"],
-            fg=self.colors["debugger_fg"],
-            font=("Consolas", 9),
-            state="disabled",
-            relief="flat",
-            padx=10, pady=5
-        )
-        self.git_output.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+
 
     def init_enhanced_ai_agent(self):
         """Инициализация ИИ-агента"""
@@ -1003,17 +582,19 @@ class CodeApp(tk.Tk):
         control_frame.pack_propagate(False)
 
         # Кнопки управления
-        tk.Button(control_frame, text="Очистить чат", command=self.clear_chat,
-                  bg=self.colors["btn_danger"], fg="#ffffff", font=("Segoe UI", 8),
-                  relief="flat", borderwidth=0).pack(side=tk.LEFT, padx=12, pady=8)
+        clear_chat_btn = tk.Button(control_frame, text="Очистить чат",
+                                   bg=self.colors["btn_danger"], fg="#ffffff",
+                                   font=("Segoe UI", 8),
+                                   relief="flat", borderwidth=0,
+                                   command=self.clear_chat)
+        clear_chat_btn.pack(side=tk.LEFT, padx=12, pady=8)
 
-        tk.Button(control_frame, text="Анализ кода", command=self.analyze_current_code,
-                  bg=self.colors["btn_normal"], fg="#d4d4d4", font=("Segoe UI", 8),
-                  relief="flat", borderwidth=0).pack(side=tk.LEFT, padx=8, pady=8)
-
-        tk.Button(control_frame, text="Объяснить", command=self.explain_code,
-                  bg=self.colors["btn_normal"], fg="#d4d4d4", font=("Segoe UI", 8),
-                  relief="flat", borderwidth=0).pack(side=tk.LEFT, padx=8, pady=8)
+        analyze_btn = tk.Button(control_frame, text="Анализ кода",
+                                bg=self.colors["btn_normal"], fg="#d4d4d4",
+                                font=("Segoe UI", 8),
+                                relief="flat", borderwidth=0,
+                                command=self.analyze_current_code)
+        analyze_btn.pack(side=tk.LEFT, padx=8, pady=8)
 
         # Область чата
         chat_container = tk.Frame(ai_frame, bg=self.colors["chat_bg"])
@@ -1092,12 +673,12 @@ class CodeApp(tk.Tk):
         self.cancel_button.pack(side=tk.RIGHT, padx=(0, 8))
 
         # Привязка клавиш
-        self.ai_input.bind("", lambda e: self.start_ai_query())
-        self.ai_input.bind("", lambda e: None)
+        self.ai_input.bind("<Control-Return>", lambda e: self.start_ai_query())
+        self.ai_input.bind("<Shift-Return>", lambda e: None)
 
         # Приветственные сообщения
         self.add_system_message("ИИ Помощник инициализирован")
-        self.add_system_message("Доступные команды: анализ кода, объяснение, улучшения")
+        self.add_system_message("Используйте Ctrl+Enter для отправки сообщения")
 
     def setup_chat_tags(self):
         """Настройка тегов для форматирования чата"""
@@ -1128,117 +709,600 @@ class CodeApp(tk.Tk):
                                         foreground="#6a9955",
                                         font=("Segoe UI", 8))
 
-    # === Новые методы для профессиональных функций ===
+    def add_message(self, sender, content, message_type="text"):
+        """Добавление сообщения в чат"""
+        message = ChatMessage(sender, content, message_type=message_type)
+        self.chat_messages.append(message)
 
-    def open_folder(self):
-        """Открыть папку проекта"""
-        folder_path = filedialog.askdirectory()
-        if folder_path:
-            self.project_explorer.load_directory(folder_path)
-            self.project_explorer.current_path = folder_path
+        self.chat_display.config(state="normal")
 
-    def open_file_from_explorer(self, file_path):
-        """Открыть файл из проводника"""
+        # Временная метка
+        timestamp = message.timestamp.strftime("%H:%M:%S")
+        self.chat_display.insert(tk.END, f"[{timestamp}] ", "timestamp")
+
+        # Отправитель
+        if sender == "user":
+            self.chat_display.insert(tk.END, "Вы: ", "user")
+        elif sender == "ai":
+            self.chat_display.insert(tk.END, "ИИ: ", "ai")
+        elif sender == "system":
+            self.chat_display.insert(tk.END, "Система: ", "system")
+        elif sender == "error":
+            self.chat_display.insert(tk.END, "Ошибка: ", "error")
+
+        # Обработка содержимого
+        if message_type == "code":
+            self.process_code_message(content)
+        else:
+            self.process_text_message(content)
+
+        self.chat_display.insert(tk.END, "\n\n")
+        self.chat_display.see(tk.END)
+        self.chat_display.config(state="disabled")
+
+    def process_text_message(self, content):
+        """Обработка текстового сообщения с поддержкой кода"""
+        # Поиск блоков кода
+        code_pattern = r'``````'
+        parts = re.split(code_pattern, content, flags=re.DOTALL)
+
+        for i, part in enumerate(parts):
+            if i % 2 == 0:  # Обычный текст
+                self.chat_display.insert(tk.END, part)
+            else:  # Код
+                self.insert_code_block(part)
+
+    def process_code_message(self, content):
+        """Обработка сообщения с кодом"""
+        self.insert_code_block(content)
+
+    def insert_code_block(self, code):
+        """Вставка блока кода с кнопкой копирования"""
+        self.chat_display.insert(tk.END, "\n")
+
+        # Заголовок блока кода
+        self.chat_display.insert(tk.END, "Код Python:", "system")
+        self.chat_display.insert(tk.END, "\n")
+
+        # Код
+        self.chat_display.insert(tk.END, code, "code")
+        self.chat_display.insert(tk.END, "\n")
+
+        # Кнопка копирования
+        copy_btn = tk.Button(
+            self.chat_display,
+            text="Копировать код",
+            font=("Segoe UI", 8),
+            bg=self.colors["btn_normal"],
+            fg="#d4d4d4",
+            relief="flat",
+            borderwidth=0,
+            padx=10, pady=6,
+            command=lambda: self.copy_code_to_clipboard(code),
+            cursor="hand2"
+        )
+
+        self.chat_display.window_create(tk.INSERT, window=copy_btn)
+
+    def add_system_message(self, content):
+        """Добавление системного сообщения"""
+        self.add_message("system", content)
+
+    def copy_code_to_clipboard(self, code):
+        """Копирование кода в буфер обмена"""
+        self.clipboard_clear()
+        self.clipboard_append(code.strip())
+        self.add_system_message("Код скопирован в буфер обмена")
+
+    def clear_chat(self):
+        """Очистка чата"""
+        self.chat_messages.clear()
+        self.chat_display.config(state="normal")
+        self.chat_display.delete("1.0", tk.END)
+        self.chat_display.config(state="disabled")
+        self.add_system_message("Чат очищен")
+
+    def start_ai_query(self, context_code=None):
+        """Упрощенный запрос к ИИ"""
+        user_input = self.ai_input.get("1.0", "end-1c").strip()
+        if not user_input:
+            return
+
+        if self.ai_request_manager.is_processing:
+            self.add_system_message("Дождитесь завершения предыдущего запроса")
+            return
+
+        # Очистка поля ввода
+        self.ai_input.delete("1.0", tk.END)
+
+        # Добавление сообщения пользователя
+        self.add_message("user", user_input)
+
+        # Получение контекста кода
+        context = context_code if context_code else ""
+
+        # Всегда пытаемся получить код из редактора
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+            tab, editor, _ = self.get_current_editor()
+            current_code = editor.get("1.0", "end-1c").strip()
+            if current_code:
+                context = current_code
+        except Exception:
+            pass
 
-            # Проверяем, не открыт ли уже этот файл
-            for i, tab in enumerate(self.file_tabs):
-                if tab.path == file_path:
-                    self.file_notebook.select(i)
-                    return
+        # Обновление интерфейса
+        self.update_ui_for_processing(True)
 
-            # Создаем новую вкладку
-            tab = FileTab(name=os.path.basename(file_path), content=content, path=file_path)
-            self.create_editor_tab(tab, content)
+        # Запуск запроса
+        success = self.ai_request_manager.add_request(user_input, context)
+        if not success:
+            self.add_message("error", "Не удалось запустить запрос")
+            self.update_ui_for_processing(False)
+
+    def analyze_current_code(self):
+        """Анализ текущего кода"""
+        try:
+            tab, editor, _ = self.get_current_editor()
+            current_code = editor.get("1.0", "end-1c").strip()
+
+            if not current_code:
+                self.add_system_message("Нет кода для анализа")
+                return
+
+            # Переключение на вкладку ИИ
+            for i in range(self.tools_notebook.index("end")):
+                tab_text = self.tools_notebook.tab(i, "text")
+                if "ИИ" in tab_text:
+                    self.tools_notebook.select(i)
+                    break
+
+            # Формирование запроса для анализа
+            analysis_prompt = "Проанализируй код и найди ошибки"
+
+            # Добавление в поле ввода
+            self.ai_input.delete("1.0", tk.END)
+            self.ai_input.insert("1.0", analysis_prompt)
+
+            # Запуск анализа
+            self.start_ai_query(context_code=current_code)
 
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось открыть файл: {e}")
+            self.add_message("error", f"Ошибка при получении кода: {e}")
 
-    def save_file_as(self):
-        """Сохранить файл как"""
+    def quick_ai_analysis(self):
+        """Быстрый анализ кода через меню"""
+        self.analyze_current_code()
+
+    def cancel_ai_request(self):
+        """Отмена текущего запроса"""
+        self.ai_request_manager.cancel_request()
+        self.update_ui_for_processing(False)
+        self.add_system_message("Запрос отменен")
+
+    def update_ui_for_processing(self, is_processing):
+        """Обновление интерфейса во время обработки"""
+        if is_processing:
+            self.send_button.config(state="disabled", text="Обработка...")
+            self.cancel_button.config(state="normal")
+            self.status_label.config(text="Обработка...", fg="#ffd700")
+        else:
+            self.send_button.config(state="normal", text="Отправить")
+            self.cancel_button.config(state="disabled")
+            self.status_label.config(text="Готов", fg="#4ec9b0")
+
+    def _handle_ai_response(self, status, response):
+        """Обработка ответа от ИИ"""
+
+        def update_ui():
+            if status == "success":
+                if response.strip():
+                    cleaned_response = process_content(response)
+                    self.add_message("ai", cleaned_response)
+                else:
+                    self.add_message("ai", "Не удалось сгенерировать ответ")
+            else:
+                self.add_message("error", f"Ошибка запроса: {response}")
+
+            self.update_ui_for_processing(False)
+
+        self.after(0, update_ui)
+
+    # === Методы для работы с файлами и редактором ===
+
+    def bind_hotkeys(self):
+        """Привязка горячих клавиш"""
+        self.bind_all("<Control-n>", lambda e: self.new_file())
+        self.bind_all("<Control-o>", lambda e: self.load_file())
+        self.bind_all("<Control-s>", lambda e: self.save_file())
+        self.bind_all("<Control-z>", self.undo)
+        self.bind("<F5>", lambda e: self.run_code())
+        self.bind("<F1>", lambda e: self.open_help())
+
+    def clear_debugger(self):
+        """Очистка отладчика"""
+        self.debugger.config(state="normal")
+        self.debugger.delete("1.0", tk.END)
+        self.debugger.config(state="disabled")
+        self._debugger_insert("Отладчик очищен\n\n")
+
+    def clear_cmd(self):
+        """Очистка терминала"""
+        self.cmd_output.config(state="normal")
+        self.cmd_output.delete("1.0", tk.END)
+        self.cmd_output.config(state="disabled")
+        self._cmd_insert("Терминал очищен\n\n")
+
+    def _cmd_insert(self, text):
+        """Вставка текста в терминал"""
+        self.cmd_output.config(state="normal")
+        self.cmd_output.insert(tk.END, str(text))
+        self.cmd_output.see(tk.END)
+        self.cmd_output.config(state="disabled")
+
+    def setings(self):
+        """Окно настроек"""
+        settings_window = tk.Toplevel(self)
+        settings_window.title("Настройки")
+        settings_window.geometry("400x300")
+        settings_window.configure(bg=self.colors["bg"])
+        settings_window.resizable(False, False)
+
+        settings_window.transient(self)
+        settings_window.grab_set()
+
+        title_label = tk.Label(settings_window,
+                               text="Настройки приложения",
+                               bg=self.colors["bg"],
+                               fg="#d4d4d4",
+                               font=("Segoe UI", 14, "bold"))
+        title_label.pack(pady=20)
+
+        ai_frame = tk.LabelFrame(settings_window,
+                                 text="Настройки ИИ",
+                                 bg=self.colors["bg"],
+                                 fg="#d4d4d4",
+                                 font=("Segoe UI", 10, "bold"))
+        ai_frame.pack(padx=20, pady=10, fill=tk.X)
+
+        model_label = tk.Label(ai_frame,
+                               text=f"Текущая модель: {MODEL}",
+                               bg=self.colors["bg"],
+                               fg="#d4d4d4")
+        model_label.pack(pady=5)
+
+    def insert_spaces(self, event=None):
+        widget = event.widget
+        widget.insert(tk.INSERT, '    ')
+        return "break"
+
+    def auto_indent(self, event):
+        widget = event.widget
+        index = widget.index("insert linestart")
+        prev_line = widget.get(f"{index} -1l linestart", f"{index} -1l lineend")
+        indent = re.match(r"^(\s*)", prev_line).group(1)
+
+        if prev_line.rstrip().endswith(":"):
+            indent += "    "
+
+        widget.insert("insert", f"\n{indent}")
+        return "break"
+
+    def highlight_syntax(self, event=None):
+        try:
+            _, input_text, _ = self.get_current_editor()
+        except Exception:
+            return
+
+        code = input_text.get("1.0", "end-1c")
+
+        for tag in input_text.tag_names():
+            input_text.tag_remove(tag, "1.0", "end")
+
+        # Ключевые слова Python
+        keywords = r"\b(False|None|True|and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|nonlocal|not|or|pass|raise|return|try|while|with|yield)\b"
+        for match in re.finditer(keywords, code):
+            start = f"1.0+{match.start()}c"
+            end = f"1.0+{match.end()}c"
+            input_text.tag_add("keyword", start, end)
+            input_text.tag_config("keyword", foreground="#569cd6")
+
+        # Строки
+        for match in re.finditer(r'".*?"|\'.*?\'', code):
+            start = f"1.0+{match.start()}c"
+            end = f"1.0+{match.end()}c"
+            input_text.tag_add("string", start, end)
+            input_text.tag_config("string", foreground="#ce9178")
+
+        # Комментарии
+        for match in re.finditer(r"#.*", code):
+            start = f"1.0+{match.start()}c"
+            end = f"1.0+{match.end()}c"
+            input_text.tag_add("comment", start, end)
+            input_text.tag_config("comment", foreground="#6a9955")
+
+    def new_file(self):
+        tab = FileTab()
+        frame = tk.Frame(self.file_notebook, bg=self.colors["editor_bg"])
+
+        # Создание редактора с правильными номерами строк
+        editor_container = tk.Frame(frame, bg=self.colors["editor_bg"])
+        editor_container.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+        # Текстовый виджет
+        input_text = tk.Text(editor_container, wrap='none', undo=True, font=("Consolas", 11),
+                             background=self.colors["editor_bg"], foreground=self.colors["editor_fg"],
+                             insertbackground="#d4d4d4", selectbackground="#264f78",
+                             relief="flat", padx=12, pady=12,
+                             borderwidth=0)
+
+        # Номера строк
+        line_numbers = LineNumbers(editor_container, input_text)
+
+        # Размещение виджетов
+        line_numbers.pack(side=tk.LEFT, fill=tk.Y)
+        input_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Скроллбар
+        scrollbar = tk.Scrollbar(editor_container, orient=tk.VERTICAL, command=input_text.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        input_text.config(yscrollcommand=scrollbar.set)
+
+        # Привязка событий
+        input_text.bind("<Tab>", self.insert_spaces)
+        input_text.bind("<Return>", self.auto_indent)
+        input_text.bind("<KeyRelease>", self.highlight_syntax)
+        input_text.bind("<Button-1>", lambda e: line_numbers.redraw())
+        input_text.bind("<MouseWheel>", lambda e: line_numbers.redraw())
+
+        # Добавление вкладки
+        tab_text = f"{tab.name}"
+        self.file_notebook.add(frame, text=tab_text)
+        self.file_tabs.append(tab)
+        self.file_editors.append((line_numbers, input_text))
+        self.file_notebook.select(len(self.file_tabs) - 1)
+
+        # Инициальная отрисовка номеров строк
+        self.after(100, line_numbers.redraw)
+
+    def load_file(self):
+        filetypes = [
+            ("T-Code files", "*.tcd"),
+            ("Python files", "*.py"),
+            ("Text files", "*.txt"),
+            ("All files", "*.*")
+        ]
+
+        filepath = filedialog.askopenfilename(filetypes=filetypes)
+        if filepath:
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                tab = FileTab(name=os.path.basename(filepath), content=content, path=filepath)
+                frame = tk.Frame(self.file_notebook, bg=self.colors["editor_bg"])
+
+                editor_container = tk.Frame(frame, bg=self.colors["editor_bg"])
+                editor_container.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+                # Текстовый виджет
+                input_text = tk.Text(editor_container, wrap='none', undo=True, font=("Consolas", 11),
+                                     background=self.colors["editor_bg"], foreground=self.colors["editor_fg"],
+                                     insertbackground="#d4d4d4", selectbackground="#264f78",
+                                     relief="flat", padx=12, pady=12,
+                                     borderwidth=0)
+                input_text.insert("1.0", content)
+
+                # Номера строк
+                line_numbers = LineNumbers(editor_container, input_text)
+
+                # Размещение виджетов
+                line_numbers.pack(side=tk.LEFT, fill=tk.Y)
+                input_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+                # Скроллбар
+                scrollbar = tk.Scrollbar(editor_container, orient=tk.VERTICAL, command=input_text.yview)
+                scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+                input_text.config(yscrollcommand=scrollbar.set)
+
+                # Привязка событий
+                input_text.bind("<Tab>", self.insert_spaces)
+                input_text.bind("<Return>", self.auto_indent)
+                input_text.bind("<KeyRelease>", self.highlight_syntax)
+                input_text.bind("<Button-1>", lambda e: line_numbers.redraw())
+                input_text.bind("<MouseWheel>", lambda e: line_numbers.redraw())
+
+                tab_text = f"{tab.name}"
+                self.file_notebook.add(frame, text=tab_text)
+                self.file_tabs.append(tab)
+                self.file_editors.append((line_numbers, input_text))
+                self.file_notebook.select(len(self.file_tabs) - 1)
+
+                self.highlight_syntax()
+                self.after(100, line_numbers.redraw)
+                self.add_system_message(f"Файл загружен: {os.path.basename(filepath)}")
+
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Не удалось загрузить файл:\n{e}")
+
+    def switch_file_tab(self, event=None):
+        try:
+            idx = self.file_notebook.index(self.file_notebook.select())
+            line_numbers, input_text = self.file_editors[idx]
+            self.highlight_syntax()
+            line_numbers.redraw()
+        except Exception:
+            pass
+
+    def get_current_editor(self):
+        idx = self.file_notebook.index(self.file_notebook.select())
+        return self.file_tabs[idx], self.file_editors[idx][1], self.file_editors[idx][0]
+
+    def output(self, text):
+        self._debugger_insert(str(text) + "\n")
+
+    def run_code(self):
+        global i
+        i += 1
+        self._debugger_insert("\n" + "=" * 30 + f" OUTPUT {i} " + "=" * 30 + "\n")
+
+        try:
+            _, input_text, _ = self.get_current_editor()
+            code = input_text.get("1.0", tk.END).strip()
+
+            if not code:
+                self.output("Нет кода для выполнения")
+                return
+
+            compiled = c.t_compile(code)
+            self.output(compiled)
+
+        except Exception as e:
+            self.output(f"Ошибка выполнения: {e}")
+
+        self._debugger_insert("=" * 70 + "\n\n")
+
+    def save_file(self):
         try:
             tab, input_text, _ = self.get_current_editor()
 
             filetypes = [
-                ("Python files", "*.py"),
                 ("T-Code files", "*.tcd"),
+                ("Python files", "*.py"),
                 ("Text files", "*.txt"),
                 ("All files", "*.*")
             ]
 
-            filepath = filedialog.asksaveasfilename(defaultextension=".py", filetypes=filetypes)
-            if filepath:
-                with open(filepath, "w", encoding="utf-8") as f:
-                    f.write(input_text.get("1.0", tk.END))
-
+            if tab.path is None:
+                filepath = filedialog.asksaveasfilename(defaultextension=".tcd", filetypes=filetypes)
+                if not filepath:
+                    return
                 tab.path = filepath
                 tab.name = os.path.basename(filepath)
-                tab.saved = True
 
-                # Обновляем название вкладки
                 current_tab = self.file_notebook.select()
-                self.file_notebook.tab(current_tab, text=tab.name)
+                self.file_notebook.tab(current_tab, text=f"{tab.name}")
+            else:
+                filepath = tab.path
 
-                self.add_system_message(f"Файл сохранен как: {os.path.basename(filepath)}")
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(input_text.get("1.0", tk.END))
+
+            tab.saved = True
+            self.add_system_message(f"Файл сохранен: {os.path.basename(filepath)}")
 
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось сохранить файл: {e}")
+            messagebox.showerror("Ошибка", f"Не удалось сохранить файл:\n{e}")
 
-    def save_all_files(self):
-        """Сохранить все открытые файлы"""
-        saved_count = 0
-        for i, tab in enumerate(self.file_tabs):
-            if not tab.saved and tab.path:
-                try:
-                    _, editor, _ = self.get_editor_by_index(i)
-                    with open(tab.path, 'w', encoding='utf-8') as f:
-                        f.write(editor.get("1.0", tk.END))
-                    tab.saved = True
-                    saved_count += 1
-                except Exception:
-                    pass
+    def open_help(self):
+        help_window = tk.Toplevel(self)
+        help_window.title("Справка")
+        help_window.geometry("600x400")
+        help_window.configure(bg=self.colors["bg"])
 
-        if saved_count > 0:
-            self.add_system_message(f"Сохранено файлов: {saved_count}")
+        help_text = scrolledtext.ScrolledText(help_window,
+                                              bg=self.colors["debugger_bg"],
+                                              fg=self.colors["debugger_fg"],
+                                              font=("Segoe UI", 10),
+                                              padx=20, pady=20)
+        help_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-    def close_current_file(self):
-        """Закрыть текущий файл"""
-        if len(self.file_tabs) > 1:
-            current_index = self.file_notebook.index(self.file_notebook.select())
-            self.close_file_tab(current_index)
+        help_content = """
+T-Code Professional - Справка
 
-    def redo(self):
-        """Повторить отмененное действие"""
+ГОРЯЧИЕ КЛАВИШИ:
+-  Ctrl+N - Новый файл
+-  Ctrl+O - Открыть файл  
+-  Ctrl+S - Сохранить файл
+-  Ctrl+Z - Отменить действие
+-  F5 - Запустить код
+-  F1 - Справка
+
+ИИ ПОМОЩНИК:
+-  Ctrl+Enter - Отправить сообщение
+-  Меню "ИИ" -> "Анализ кода" - Проверить текущий файл
+-  Поддержка блоков кода в формате ```
+
+ФУНКЦИИ:
+-  Подсветка синтаксиса Python
+-  Автоматические отступы
+-  Нумерация строк
+-  Интегрированный отладчик
+-  Командная строка
+-  ИИ анализ кода
+
+СОВЕТЫ:
+-  Используйте короткие и конкретные вопросы для ИИ
+-  Сохраняйте файлы регулярно
+-  Проверяйте код через ИИ помощника
+        """
+
+        help_text.insert("1.0", help_content)
+        help_text.config(state="disabled")
+
+    def execute_system_command(self, command):
+        """Выполняет системную команду в отдельном потоке"""
+        try:
+            self.cmd_running = True
+            self.after(0, self.update_kill_button)  # Обновляем кнопку прерывания
+
+            # Формируем команду в правильном формате
+            formatted_command = f'cmd("{command}")'
+
+            # Выполняем команду через механизм mcmd
+            result = cmd.compile(formatted_command)
+
+            # Обновляем интерфейс из основного потока
+            self.after(0, lambda: self._cmd_insert(f"{result}\n\n"))
+
+        except Exception as e:
+            self.after(0, lambda: self._cmd_insert(f"Ошибка выполнения команды: {str(e)}\n\n"))
+        finally:
+            self.cmd_running = False
+            self.after(0, self.update_kill_button)  # Обновляем кнопку прерывания
+
+    def process_cmd(self, event=None):
+        cmd_text = self.cmd_entry.get().strip()
+        if not cmd_text:
+            return
+
+        self._cmd_insert(f"T-Code> {cmd_text}\n")
+        self.cmd_entry.delete(0, tk.END)
+
+        # Если уже выполняется команда - игнорируем новые
+        if self.cmd_running:
+            self._cmd_insert("Дождитесь завершения текущей команды\n\n")
+            return
+
+        try:
+            if cmd_text.startswith("cmd "):
+                # Запускаем системную команду в отдельном потоке
+                threading.Thread(
+                    target=self.execute_system_command,
+                    args=(cmd_text[4:],),
+                    daemon=True
+                ).start()
+            else:
+                # Обработка обычной команды T-Code
+                result = cmd.compile(cmd_text)
+                self._cmd_insert(f"{result}\n\n")
+        except Exception as e:
+            self._cmd_insert(f"Ошибка: {e}\n\n")
+
+    def _debugger_insert(self, text):
+        self.debugger.config(state="normal")
+        self.debugger.insert(tk.END, str(text))
+        self.debugger.see(tk.END)
+        self.debugger.config(state="disabled")
+
+    def undo(self, event=None):
         try:
             _, input_text, _ = self.get_current_editor()
-            input_text.edit_redo()
+            input_text.edit_undo()
         except Exception:
             pass
 
-    def cut(self):
-        """Вырезать выделенный текст"""
-        try:
-            _, input_text, _ = self.get_current_editor()
-            input_text.event_generate(">")
-        except Exception:
-            pass
 
-    def copy(self):
-        """Копировать выделенный текст"""
-        try:
-            _, input_text, _ = self.get_current_editor()
-            input_text.event_generate(">")
-        except Exception:
-            pass
+if __name__ == "__main__":
+    app = CodeApp()
+    app.mainloop()
 
-    def paste(self):
-        """Вставить текст из буфера"""
-        try:
-            _, input_text, _ = self.get_current_editor()
-            input_text.event_generate(">")
-        except Exception:
-            pass
-
-    
