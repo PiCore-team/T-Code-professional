@@ -5,6 +5,7 @@ import sys
 import os
 import ast
 import shlex
+from tkinter import *
 
 
 class Command:
@@ -208,15 +209,48 @@ def sd():
 
 
 def install():
-    result = compile("cmd pip install requests pillow numpy transformers flask flask-cors tk pygetwindow pyscreeze streamlit rich")
+    result0 = compile("cmd_init()")
+    result1 = compile("cmd ollama pull tinyllama")
+    result2 = compile("cmd pip install requests pillow numpy transformers flask flask-cors tk pygetwindow pyscreeze streamlit rich")
+    result3 = compile("cmd ollama serve")
+    result = f"""
+    {result0}
+    
+    
+    
+    $  cmd ollama pull tinyllama
+    {result1}
+    
+    
+    
+    $  cmd pip install requests pillow numpy transformers flask flask-cors tk pygetwindow pyscreeze streamlit rich
+    {result2}
+    
+    
+    
+    $  cmd ollama serve
+    {result3}
+    
+    
+    
+    ============= done =============
+    """
     return result
 
 def exitf():
     exit()
 
+def comandsHelp():
+    comandHelp = Tk()
+    comandHelp.geometry("700x700")
+    super().__init__()
+    comandHelp.title("T-Code Professional")
+    comandHelp.configure(bg="#121212")
+
 
 # Регистрируем все команды
 add_command("help", 0, help)
+add_command("all_comands", 0, comandsHelp)
 add_command("sys_dia", 0, sd)
 add_command("program_init", 0, install)
 add_command("exit", 0, exitf)
