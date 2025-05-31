@@ -208,13 +208,8 @@ def sd():
 
 
 def install():
-    try:
-        with open("scripts/inst.bat", "r", encoding="utf-8") as file:
-            content = file.read()
-            return content
-    except Exception as e:
-        return f"Ошибка чтения файла: {str(e)}"
-
+    result = compile("cmd pip install requests pillow numpy transformers flask flask-cors tk pygetwindow pyscreeze streamlit rich")
+    return result
 
 def exitf():
     exit()
@@ -223,7 +218,7 @@ def exitf():
 # Регистрируем все команды
 add_command("help", 0, help)
 add_command("sys_dia", 0, sd)
-add_command("install", 0, install)
+add_command("program_init", 0, install)
 add_command("exit", 0, exitf)
 add_command("cmd", 1, cmd_exec)  # 1 аргумент - строка команды
 add_command("cmd_init", 0, cmd_init)
