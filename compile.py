@@ -31,7 +31,9 @@ def split_args(params):
             in_string = True
             string_char = char
         elif char == string_char and in_string:
+            # Проверка на экранированные кавычки
             if i > 0 and params[i-1] == '\\':
+                # Убираем экранирование
                 current[-1] = char
             else:
                 in_string = False
@@ -44,6 +46,7 @@ def split_args(params):
         if char == '[': bracket_depth += 1
         if char == ']': bracket_depth -= 1
 
+        # Разделитель только если не внутри строки и не внутри скобок
         if char == ',' and not in_string and paren_depth == 0 and brace_depth == 0 and bracket_depth == 0:
             parts.append(''.join(current).strip())
             current = []
@@ -53,6 +56,15 @@ def split_args(params):
     if current:
         parts.append(''.join(current).strip())
     return parts
+
+def try_eval(arg):
+    try:
+        # Пробуем распознать как строку в кавычках
+        if (arg.startswith('"') and arg.endswith('"')) or (arg.startswith("'") and arg.endswith("'")):
+            return arg[1:-1]
+        return ast.literal_eval(arg)
+    except:
+        return arg  # оставить как строку/идентификатор
 
 def execute_python_code(code):
     code = code.replace('\t', '   ')
@@ -80,11 +92,6 @@ def execute_python_code(code):
         return f"ошибка python: {e}"
 
 
-def try_eval(arg):
-    try:
-        return ast.literal_eval(arg)
-    except:
-        return arg  # оставить как строку/идентификатор
 
 def parse_command_single(command_str):
     for name, cmd in commands.items():
@@ -170,3 +177,10 @@ def call_command(name, *args):
 
 def t_compile(command_str):
     return parse_command(command_str)
+
+
+def cmd_exec(*args):
+    # Перенаправляем выполнение в mcmd
+    return "Используйте команду напрямую в T-Code"
+
+add_command("cmd", -1, cmd_exec)
