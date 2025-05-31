@@ -157,15 +157,11 @@ def parse_command(command_str):
     return "\n".join(str(o) for o in output if o)
 # ==== Примеры команд ====
 
-def movefunc(x, y):
-    return f"Движение: X={x}, Y={y}"
-
 def create_var(name, value):
     variables[name] = value
     return f"Создана {name} = {value}"
 
-add_command("move", 2, movefunc)
-add_command("var.create", 2, create_var, start='!', end=';')
+add_command("var.create", 2, create_var, start='!')
 
 def call_command(name, *args):
     if name not in commands:
